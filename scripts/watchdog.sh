@@ -67,7 +67,7 @@ kill_port_holders() {
   [ -z "$lp" ] && return 0
   log "PORT-CLEAN: listener pid=$lp -> kill"
   kill "$lp" 2>/dev/null || true
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do   # up to 30s grace for listener exit
     lsof -nP -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
     sleep 1
   done
