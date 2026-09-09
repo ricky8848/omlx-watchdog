@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-shell:
+    name: ShellCheck (watchdog + installer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Check watchdog.sh
+        run: shellcheck -S warning scripts/watchdog.sh
+
+      - name: Check install.sh
+        run: shellcheck -S warning scripts/install.sh
+
+  yaml-lint:
+    name: YAML lint (issue templates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate YAML files parse
+        run: |
+          python3 -c "import yaml,glob,sys
+          bad=[f for f in glob.glob('.github/ISSUE_TEMPLATE/*.yml') if not yaml.safe_load(open(f))]
+          sys.exit('bad: '+','.join(bad) if bad else 0)"

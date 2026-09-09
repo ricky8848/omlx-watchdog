@@ -1,0 +1,17 @@
+name: ❓ Question / 使用咨询
+description: How to configure, adapt, or extend omlx-watchdog
+title: "[question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome! 欢迎提问！
+        Check the [README](https://github.com/ricky8848/omlx-watchdog#readme) and [SKILL.md](https://github.com/ricky8848/omlx-watchdog/blob/main/SKILL.md) first — most configuration questions are answered there.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question / 你的问题
+      placeholder: What are you trying to do? What have you tried so far?
+    validations:
+      required: true

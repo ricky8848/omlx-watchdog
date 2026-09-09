@@ -1,5 +1,7 @@
 # omlx-watchdog
 
+![CI](https://github.com/ricky8848/omlx-watchdog/actions/workflows/ci.yml/badge.svg)
+![Auto-Reply](https://github.com/ricky8848/omlx-watchdog/actions/workflows/auto-reply.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-5A67D8?logo=apple&logoColor=white)
 ![oMLX](https://img.shields.io/badge/oMLX-%3E%3D0.6.4-2EA44F)
 ![launchd](https://img.shields.io/badge/scheduler-launchd-FFD43B?logo=apple&logoColor=black)
@@ -7,10 +9,30 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-2C4F7C?logo=python&logoColor=white)
 ![Bash](https://img.shields.io/badge/bash-3.2+-121011?logo=gnubash&logoColor=white)
+![Issues](https://img.shields.io/github/issues/ricky8848/omlx-watchdog?label=issues)
+![Issues-closed](https://img.shields.io/github/issues-closed/ricky8848/omlx-watchdog?label=issues%20closed)
+![Last commit](https://img.shields.io/github/last-commit/ricky8848/omlx-watchdog?label=last%20commit)
+![Repo size](https://img.shields.io/github/repo-size/ricky8848/omlx-watchdog?label=repo%20size)
+![Contributors](https://img.shields.io/github/contributors/ricky8848/omlx-watchdog?label=contributors)
+![Stars](https://img.shields.io/github/stars/ricky8848/omlx-watchdog?style=social)
+![Forks](https://img.shields.io/github/forks/ricky8848/omlx-watchdog?style=social)
+![Sponsor](https://img.shields.io/badge/sponsor-❤️-support-green?logo=github-sponsors)
+![L10n](https://img.shields.io/badge/l10n-7%20languages-blueviolet)
 
 **Keep your local [oMLX](https://github.com/jundot/omlx) inference server alive.**
 
 A launchd-based health watchdog for [oMLX](https://github.com/jundot/omlx) (local OpenAI-compatible LLM server for Apple Silicon). It detects wedged/stopped engines and recovers them automatically — with **zero false-positive restarts**, so long-running agent sessions (DSH, OpenClaw, …) survive crashes without human intervention and without the watchdog itself causing the failures it monitors.
+
+
+**📖 Documentation in your language / 多语言文档:**
+
+| 🇬🇧 English | 🇨🇳 简体中文 | 🇯🇵 日本語 | 🇰🇷 한국어 |
+|:---:|:---:|:---:|:---:|
+| [README](./README.md) *(this file)* | [简体中文](docs/i18n/README.zh-CN.md) | [日本語](docs/i18n/README.ja.md) | [한국어](docs/i18n/README.ko.md) |
+
+| 🇪🇸 Español | 🇫🇷 Français | 🇩🇪 Deutsch |
+|:---:|:---:|:---:|
+| [Español](docs/i18n/README.es.md) | [Français](docs/i18n/README.fr.md) | [Deutsch](docs/i18n/README.de.md) |
 
 Battle-tested for a week+ on **Apple M5 Max / 128 GB / macOS** serving Qwen3.8-27B for an autonomous coding agent: zero manual recoveries, every crash self-healed within ~2–4 minutes.
 
@@ -82,6 +104,22 @@ rm -f ~/Library/LaunchAgents/com.ricky8848.omlx-watchdog.plist ~/.omlx/watchdog.
 - Zero false-positive restarts (v6). Earlier versions: 2 incidents → both fixed and documented above (#3, #4 in the table).
 - Agent sessions (DSH) resumed automatically through every recovery; no task lost.
 
+## FAQ — Screen jitters once per minute?
+
+**Usually it's NOT omlx-watchdog.** The watchdog itself only does HTTP GET/POST (no UI, no window manipulation), and in the current version it triggers zero restarts on a healthy server.
+
+The most common culprit of once-per-minute jitter is **another launchd agent that runs `open -a <GUI App>` every 60 s**. How to find it:
+
+```bash
+# 1. List all agents with StartInterval=60
+ls ~/Library/LaunchAgents/*.plist | xargs -I{} sh -c 'echo "== {}"; plutil -p "{}" 2>/dev/null | grep StartInterval'
+
+# 2. Find which one re-launches a GUI app (real case: docker-watchdog.sh ran open -a Docker every minute)
+grep -l "open -a" ~/Library/LaunchAgents/*.plist ~/.omlx/*watchdog*.sh 2>/dev/null
+```
+
+**Real case (Sept 2026):** `com.ricky.docker-watchdog` executed `open -a Docker` every minute. The Docker Desktop GUI (Electron) re-activates its window on each `open -a` → screen jitters. Even with the Docker daemon UP, the script's probe failed in certain windows and fired every minute. Fix: repair the Docker daemon / add a `pgrep -f "Docker Desktop" && exit 0` guard to the script.
+
 ## Companion settings (agent harness side, DSH example)
 
 The watchdog covers oMLX-side recovery. The **harness** must be sized to wait through it:
@@ -116,6 +154,17 @@ oMLX side (`~/.omlx/settings.json`): `sampling.max_context_window`, `prefill_mem
 - **No network egress** except to `127.0.0.1`. No telemetry, no phoning home.
 - The idle probe (Check C) costs a few tokens per tick while the server is idle; it is skipped whenever real work is in flight.
 - The script only ever touches: `~/.omlx/` (its own log), `/tmp/omlx-watchdog-*` state files, and the oMLX process via `omlx restart`.
+
+## Auto-maintenance (GitHub Actions)
+
+| Workflow | What it does |
+|---:|---|
+| [`CI`](.github/workflows/ci.yml) | ShellCheck on both scripts + YAML lint of issue templates (runs on every push/PR — the "CI" badge above) |
+| [`Auto-Reply`](.github/workflows/auto-reply.yml) | On a **new issue**: posts a bilingual draft reply asking for the 4 diagnostic items (omlx version, macOS+chip, watchdog log tail, version line) and labels it `auto-reply-draft`. On a **new issue comment**: posts an acknowledgement. Maintainer notification to Gmail happens via GitHub's built-in email notifications (Settings → Notifications) — no extra credentials in the repo |
+
+Issue templates ([`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE)): structured **bug report** (symptom dropdown, required environment block) and **question**.
+
+> To route auto-replies to a specific Gmail address: GitHub already emails you on every issue/comment by default. For *custom* automated email (e.g. a dedicated inbox), add an SMTP step to the workflow — but that requires storing credentials in GitHub Secrets, which this repo deliberately avoids.
 
 ## Version history (what each version fixed)
 

@@ -1,0 +1,52 @@
+name: 🐛 Bug report / 问题反馈
+description: Something broke — engine wedged, restart loop, false-positive restart…
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill this out! 感谢反馈！
+
+        **Before posting** — check the [README problem catalog](https://github.com/ricky8848/omlx-watchdog#why-this-exists--the-problems-omlx-actually-has); most issues are already documented there with fixes.
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What did you observe? / 现象是什么？
+      options:
+        - "No tokens for a long time (engine wedged) / 长时间无 token"
+        - "oMLX process died and was not restarted / oMLX 进程死亡未重启"
+        - "Restart fails: port already in use / 重启失败：端口占用"
+        - "Endless restart loop after switching models / 切换模型后无限重启循环"
+        - "Watchdog restarted oMLX while it was healthy (false positive) / 误杀健康服务"
+        - "Screen jitters periodically (see FAQ — usually not the watchdog) / 屏幕周期性抖动"
+        - "Other / 其他"
+      allow_multiple: false
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details / 详细描述
+      description: What were you doing, what happened, what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment (required) / 环境信息（必填）
+      placeholder: |
+        - oMLX version: (omlx --version)
+        - macOS + chip: (e.g. macOS 27 / M5 Max 128GB)
+        - watchdog version: (head -3 ~/.omlx/watchdog.sh → v6?)
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Watchdog log (last 30 lines) / watchdog.log（最近30行）
+      placeholder: tail -n 30 ~/.omlx/logs/watchdog.log
+      render: shell
+    validations:
+      required: false

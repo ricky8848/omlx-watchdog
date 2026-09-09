@@ -1,0 +1,66 @@
+name: Auto-Reply
+
+# Drafts a helpful reply on new issues/PR comments (label "auto-reply-draft")
+# and emails the maintainer via GitHub's built-in email notifications.
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  draft-reply:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' || (github.event.issue && !contains(github.actor, '[bot]'))
+    steps:
+      - name: Draft reply on new issue
+        if: github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'auto-reply-draft')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '## Thanks for the report! 🙏',
+              '',
+              'Before we dig in, could you confirm a few details?',
+              '',
+              '| Item | Where to find it |',
+              '|---|---|',
+              '| oMLX version | `omlx --version` or the app menu → About |',
+              '| macOS + chip | Apple  → System Settings → General → About (e.g. M5 Max / macOS 27) |',
+              '| Watchdog log (last ~30 lines) | `tail -n 30 ~/.omlx/logs/watchdog.log` |',
+              '| Watchdog version line | `head -n 3 ~/.omlx/watchdog.sh` (should say v6) |',
+              '',
+              'If the issue is "screen jitters once per minute", see the FAQ in [README.md](https://github.com/ricky8848/omlx-watchdog#faq) — it is almost always a *different* launchd agent (e.g. Docker), not the watchdog itself.',
+              '',
+              '_This is an automatic draft reply; a maintainer will follow up. 本条为自动草稿回复，维护者会跟进。_',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['auto-reply-draft'],
+            });
+
+      - name: Acknowledge new comment on an issue
+        if: github.event_name == 'issue_comment' && !contains(github.actor, '[bot]')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = 'Thanks for the update! 📬 The maintainer has been notified (GitHub email) and will reply here. 已收到，维护者会跟进。';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
