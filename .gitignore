@@ -1,0 +1,7 @@
+# runtime state (never commit)
+*.log
+*.lock
+state/
+
+# macOS
+.DS_Store
