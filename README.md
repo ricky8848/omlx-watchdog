@@ -1,23 +1,14 @@
 # omlx-watchdog
 
-![CI](https://github.com/ricky8848/omlx-watchdog/actions/workflows/ci.yml/badge.svg)
-![Auto-Reply](https://github.com/ricky8848/omlx-watchdog/actions/workflows/auto-reply.yml/badge.svg)
-![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-5A67D8?logo=apple&logoColor=white)
-![oMLX](https://img.shields.io/badge/oMLX-%3E%3D0.6.4-2EA44F)
-![launchd](https://img.shields.io/badge/scheduler-launchd-FFD43B?logo=apple&logoColor=black)
-![Version](https://img.shields.io/badge/version-v6-007EC6)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Python](https://img.shields.io/badge/python-3.9+-2C4F7C?logo=python&logoColor=white)
-![Bash](https://img.shields.io/badge/bash-3.2+-121011?logo=gnubash&logoColor=white)
-![Issues](https://img.shields.io/github/issues/ricky8848/omlx-watchdog?label=issues)
-![Issues-closed](https://img.shields.io/github/issues-closed/ricky8848/omlx-watchdog?label=issues%20closed)
-![Last commit](https://img.shields.io/github/last-commit/ricky8848/omlx-watchdog?label=last%20commit)
-![Repo size](https://img.shields.io/github/repo-size/ricky8848/omlx-watchdog?label=repo%20size)
-![Contributors](https://img.shields.io/github/contributors/ricky8848/omlx-watchdog?label=contributors)
-![Stars](https://img.shields.io/github/stars/ricky8848/omlx-watchdog?style=social)
-![Forks](https://img.shields.io/github/forks/ricky8848/omlx-watchdog?style=social)
-![Sponsor](https://img.shields.io/badge/sponsor-❤️-support-green?logo=github-sponsors)
-![L10n](https://img.shields.io/badge/l10n-7%20languages-blueviolet)
+**[oMLX](https://github.com/jundot/omlx) Watchdog** — self-healing health monitor for local LLM inference on Apple Silicon
+
+| | |
+|---|---|
+| **Build** | [![CI](https://github.com/ricky8848/omlx-watchdog/actions/workflows/ci.yml/badge.svg)](https://github.com/ricky8848/omlx-watchdog/actions/workflows/ci.yml) [![Auto-Reply](https://github.com/ricky8848/omlx-watchdog/actions/workflows/auto-reply.yml/badge.svg)](https://github.com/ricky8848/omlx-watchdog/actions/workflows/auto-reply.yml) |
+| **Release** | [![Version](https://img.shields.io/github/v/release/ricky8848/omlx-watchdog?label=version)](https://github.com/ricky8848/omlx-watchdog/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-5A67D8?logo=apple&logoColor=white)](https://github.com/ricky8848/omlx-watchdog) |
+| **Community** | [![Issues](https://img.shields.io/github/issues/ricky8848/omlx-watchdog?label=issues)](https://github.com/ricky8848/omlx-watchdog/issues) [![Issues closed](https://img.shields.io/github/issues-closed/ricky8848/omlx-watchdog?label=issues%20closed)](https://github.com/ricky8848/omlx-watchdog/issues?q=is%3Aissue+is%3Aclosed) [![Contributors](https://img.shields.io/github/contributors/ricky8848/omlx-watchdog?label=contributors)](https://github.com/ricky8848/omlx-watchdog/graphs/contributors) |
+| **Activity** | [![Last commit](https://img.shields.io/github/last-commit/ricky8848/omlx-watchdog?label=last%20commit)](https://github.com/ricky8848/omlx-watchdog/commits) [![Repo size](https://img.shields.io/github/repo-size/ricky8848/omlx-watchdog?label=repo%20size)](https://github.com/ricky8848/omlx-watchdog) [![L10n](https://img.shields.io/badge/l10n-7%20languages-blueviolet)](docs/i18n/) |
+| **Social** | [![Stars](https://img.shields.io/github/stars/ricky8848/omlx-watchdog?style=social)](https://github.com/ricky8848/omlx-watchdog/stargazers) [![Forks](https://img.shields.io/github/forks/ricky8848/omlx-watchdog?style=social)](https://github.com/ricky8848/omlx-watchdog/forks) [![Sponsor](https://img.shields.io/badge/sponsor-❤️-support-green?logo=github-sponsors)](https://github.com/sponsors/ricky8848) |
 
 **Keep your local [oMLX](https://github.com/jundot/omlx) inference server alive.**
 
@@ -174,10 +165,16 @@ Issue templates ([`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE)): structured
 | 5 | 2026-09-08 | PORT-CLEAN restricted to **LISTENER only** (`lsof -sTCP:LISTEN`); model follows `default_model`; fixes the stale-model restart loop |
 | 6 | 2026-09-08 | Model = `/api/status` **`loaded_models[0]`** (multi-model switching safe; nothing loaded → checks skipped, never force-loads); env-overridable paths/port/stall threshold |
 
-## Related
+## Works with
 
-- [jundot/omlx](https://github.com/jundot/omlx) — the inference server this watchdog protects (Apache-2.0, ⭐ 21k+)
-- [ricky8848/mac-m5-128g-omlx-settings](https://github.com/ricky8848/mac-m5-128g-omlx-settings) — full M5 Max 128 GB + DSH long-running setup (also posted as [jundot/omlx#3496](https://github.com/jundot/omlx/issues/3496))
+| Tool | Role | Integration |
+|---:|---|---|
+| [oMLX](https://github.com/jundot/omlx) ≥ 0.6.x | Inference server (Metal/ANE, MTP, TurboQuant KV) | `omlx restart` primitive; `/api/status`, `/v1/models` probes |
+| [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/DeepSeek-Harness) | Agent harness (client-side retry budget `maxRetries=40`) | Bounded retries span the 2–4 min restart window |
+| [mac-m5-128g-omlx-settings](https://github.com/ricky8848/mac-m5-128g-omlx-settings) | Full M5 Max 128 GB config (oQ4e + MTP + TQKV) | Companion repo; also posted as [jundot/omlx#3496](https://github.com/jundot/omlx/issues/3496) |
+| [Homebrew tap](https://github.com/ricky8848/homebrew-tap) | Package distribution (`brew install ricky8848/tap/omlx-watchdog`) | Formula auto-updates on each release tag |
+
+## Related
 
 ## License
 
