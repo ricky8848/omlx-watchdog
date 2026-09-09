@@ -157,7 +157,7 @@ The F1/F3 distinction matters: \texttt{oMLX restart} fixes wedges but a squatted
 A watchdog tick $t$ evaluates four predicates on the server state:
 \begin{align}
 A(t) &: \texttt{/api/status reachable within 5s} \\[0.3em]
-B(t) &: \big(\texttt{loaded\_models} = \varset\big) \lor \big(\exists m{:}\; m.\texttt{registered}\big) \\[0.3em]
+B(t) &: \big(\texttt{loaded\_models} = \varnothing\big) \lor \big(\exists m{:}\; m.\texttt{registered}\big) \\[0.3em]
 C(t) &: \neg\,\textsf{busy}(t) \;\lor\; \textsc{IdleProbe}(\texttt{max\_tokens}=4) = \textsc{ok} \\[0.3em]
 D(t) &: \neg\,\big(\textsf{workInFlight}(t) \land \Delta t_{\text{token}}(t) \ge 900\,\text{s}\big)
 \end{align}
@@ -166,7 +166,7 @@ where $\textsf{busy}(t)$ is \emph{provably} the server's own queue counter (\tex
 
 \noindent\textbf{Self-interference-freedom.} Check C fires \emph{only when the queue is provably empty}; a long decode (hours of tool-calling) keeps \texttt{active}$\ge 1$ and is never probed. Check D requires work \emph{in flight} with a frozen token counter -- idle servers have no reference to freeze. The v2 design (log mtime) violated this: cancelled requests wrote log lines, marking dead engines ``busy''.
 
-\noindent\textbf{Empty-registry awareness (F4 fix).} After a model switch the registry may transiently be empty; $B(t)$ treats $\varset$ as healthy rather than triggering a restart storm (79 such events in the v5 era).
+\noindent\textbf{Empty-registry awareness (F4 fix).} After a model switch the registry may transiently be empty; $B(t)$ treats $\varnothing$ as healthy rather than triggering a restart storm (79 such events in the v5 era).
 
 Figure~\ref{fig:detection} shows the decision flow for a single tick.
 

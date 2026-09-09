@@ -1,0 +1,9 @@
+# LaTeX 编译产物（PDF 通过 Zenodo/arXiv 分发，不入库）
+*.aux
+*.out
+*.toc
+*.log
+*.pdf
+
+# 上传用的临时 tarball（与 GitHub release 重复）
+omlx-watchdog-v6.1.0.tar.gz

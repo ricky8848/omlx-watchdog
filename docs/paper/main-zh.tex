@@ -10,10 +10,9 @@
 \usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
 \usepackage{caption}
 \usepackage{subcaption}
-% 中文支持（需要 XeLaTeX 编译）
-\usepackage{fontspec}
-\setmainfont[Path=/System/Library/Fonts/,Extension=.ttc,Index=2]{PingFang.ttc}
-\setsansfont[Path=/System/Library/Fonts/,Extension=.ttc,Index=2]{PingFang.ttc}
+% 中文支持（需要 XeLaTeX 编译）：使用 TeX Live 自带的 ctex + Fandol 字体
+% （系统 PingFang.ttc 为 CFF/OTF，fontspec 无法嵌入 TrueType 字形）
+\usepackage[UTF8, fontset=fandol]{ctex}
 
 \newcommand{\techreportnumber}{TR-2026-09-ZH}
 
@@ -160,7 +159,7 @@ F1/F3 的区分很重要：\texttt{oMLX restart} 修复卡死，但被占用的�
 看门狗心跳 $t$ 评估服务器状态的四个谓词：
 \begin{align}
 A(t) &: \texttt{/api/status 在 5s 内可达} \\[0.3em]
-B(t) &: \big(\texttt{loaded\_models} = \varset\big) \lor \big(\exists m{:}\; m.\texttt{registered}\big) \\[0.3em]
+B(t) &: \big(\texttt{loaded\_models} = \varnothing\big) \lor \big(\exists m{:}\; m.\texttt{registered}\big) \\[0.3em]
 C(t) &: \neg\,\textsf{busy}(t) \;\lor\; \textsc{IdleProbe}(\texttt{max\_tokens}=4) = \textsc{ok} \\[0.3em]
 D(t) &: \neg\,\big(\textsf{workInFlight}(t) \land \Delta t_{\text{token}}(t) \ge 900\,\text{s}\big)
 \end{align}
@@ -169,7 +168,7 @@ D(t) &: \neg\,\big(\textsf{workInFlight}(t) \land \Delta t_{\text{token}}(t) \ge
 
 \noindent\textbf{无自干扰性。} 检查 C \emph{仅在队列可证明为空时}触发；长时间解码（数小时工具调用）保持 \texttt{active}$\ge 1$，永远不会被探测。检查 D 要求工作\emph{在途}且 token 计数器冻结——空闲服务器没有可冻结的引用。v2 设计（日志 mtime）违反了这一点：取消请求写入日志行，将死引擎标记为"忙碌"。
 
-\noindent\textbf{空注册表感知（F4 修复）。} 模型切换后注册表可能暂时为空；$B(t)$ 将 $\varset$ 视为健康而非触发重启风暴（v5 时代有 79 次此类事件）。
+\noindent\textbf{空注册表感知（F4 修复）。} 模型切换后注册表可能暂时为空；$B(t)$ 将 $\varnothing$ 视为健康而非触发重启风暴（v5 时代有 79 次此类事件）。
 
 图~\ref{fig:detection} 展示了单次心跳的决策流程。
 

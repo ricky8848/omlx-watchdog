@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Build** | [![CI](https://github.com/ricky8848/omlx-watchdog/actions/workflows/ci.yml/badge.svg)](https://github.com/ricky8848/omlx-watchdog/actions/workflows/ci.yml) [![Auto-Reply](https://github.com/ricky8848/omlx-watchdog/actions/workflows/auto-reply.yml/badge.svg)](https://github.com/ricky8848/omlx-watchdog/actions/workflows/auto-reply.yml) |
-| **Release** | [![Version](https://img.shields.io/github/v/release/ricky8848/omlx-watchdog?label=version)](https://github.com/ricky8848/omlx-watchdog/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-5A67D8?logo=apple&logoColor=white)](https://github.com/ricky8848/omlx-watchdog) |
+| **Release** | [![Version](https://img.shields.io/github/v/release/ricky8848/omlx-watchdog?label=version)](https://github.com/ricky8848/omlx-watchdog/releases) [![DOI](https://zenodo.org/badge/22675074.svg)](https://doi.org/10.5281/zenodo.22675075) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE) [![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-5A67D8?logo=apple&logoColor=white)](https://github.com/ricky8848/omlx-watchdog) |
 | **Community** | [![Issues](https://img.shields.io/github/issues/ricky8848/omlx-watchdog?label=issues)](https://github.com/ricky8848/omlx-watchdog/issues) [![Issues closed](https://img.shields.io/github/issues-closed/ricky8848/omlx-watchdog?label=issues%20closed)](https://github.com/ricky8848/omlx-watchdog/issues?q=is%3Aissue+is%3Aclosed) [![Contributors](https://img.shields.io/github/contributors/ricky8848/omlx-watchdog?label=contributors)](https://github.com/ricky8848/omlx-watchdog/graphs/contributors) |
 | **Activity** | [![Last commit](https://img.shields.io/github/last-commit/ricky8848/omlx-watchdog?label=last%20commit)](https://github.com/ricky8848/omlx-watchdog/commits) [![Repo size](https://img.shields.io/github/repo-size/ricky8848/omlx-watchdog?label=repo%20size)](https://github.com/ricky8848/omlx-watchdog) [![L10n](https://img.shields.io/badge/l10n-7%20languages-blueviolet)](docs/i18n/) |
 | **Social** | [![Stars](https://img.shields.io/github/stars/ricky8848/omlx-watchdog?style=social)](https://github.com/ricky8848/omlx-watchdog/stargazers) [![Forks](https://img.shields.io/github/forks/ricky8848/omlx-watchdog?style=social)](https://github.com/ricky8848/omlx-watchdog/forks) [![Sponsor](https://img.shields.io/badge/sponsor-❤️-support-green?logo=github-sponsors)](https://github.com/sponsors/ricky8848) |
@@ -26,6 +26,8 @@ A launchd-based health watchdog for [oMLX](https://github.com/jundot/omlx) (loca
 | [Español](docs/i18n/README.es.md) | [Français](docs/i18n/README.fr.md) | [Deutsch](docs/i18n/README.de.md) |
 
 Battle-tested for a week+ on **Apple M5 Max / 128 GB / macOS** serving Qwen3.8-27B for an autonomous coding agent: zero manual recoveries, every crash self-healed within ~2–4 minutes.
+
+> **📄 Technical Report:** [A Self-Healing Watchdog for Local LLM Inference Servers on Apple Silicon — A Field Study of oMLX Failure Modes and Bounded Recovery](https://doi.org/10.5281/zenodo.22675075) (English + 简体中文, PDF on [Zenodo](https://zenodo.org/records/22675075); LaTeX source in [`docs/paper/`](./docs/paper/)). 13-day production trace: six formalized failure classes, a self-interference-free four-check health model, and a bounded escalation ladder — MTTD ≤ 60 s, MTTR < 4 min over 18,516 ticks.
 
 ## Why this exists — the problems oMLX actually has
 
