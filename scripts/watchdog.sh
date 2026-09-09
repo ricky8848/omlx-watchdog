@@ -90,7 +90,7 @@ do_restart() {
     fi
   fi
   ok="no"; m=""
-  for i in $(seq 1 24); do
+  for _ in $(seq 1 24); do   # up to 24 x 10s = 4 min for /api/status
     sleep 10
     s=$(status_json) || continue
     m=$(python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('loaded_models') or [None])[0] or '')" <<<"$s" 2>/dev/null)
