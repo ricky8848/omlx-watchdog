@@ -60,7 +60,7 @@ check_models() {   # $1 = model name; unknown/empty -> skip check (return 0)
 
 # v5: kill LISTENER on port 8000 only (never client connections - v4 bug).
 kill_port_holders() {
-  local i lp port
+  local lp port
   port=$(echo "$API_BASE" | grep -oE '[0-9]+$')
   [ -z "$port" ] && port=8000
   lp=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1)
