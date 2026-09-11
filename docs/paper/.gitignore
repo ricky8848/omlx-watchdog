@@ -3,7 +3,10 @@
 *.out
 *.toc
 *.log
-*.pdf
+
+# 已发布的论文 PDF（权威版本在 Zenodo，此处保留副本供 GitHub release 引用）
+!paper-technical-report-en.pdf
+!paper-technical-report-zh-CN.pdf
 
 # 上传用的临时 tarball（与 GitHub release 重复）
 omlx-watchdog-v6.1.0.tar.gz
