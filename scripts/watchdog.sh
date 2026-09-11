@@ -1,7 +1,18 @@
 #!/bin/bash
-# omlx-watchdog v6 — oMLX health check + auto-recovery (launchd, StartInterval=60s)
+# omlx-watchdog v9.1 — oMLX health check + auto-recovery (launchd, StartInterval=60s)
 #
-# v5 -> v6: model follows omlx dynamically via /api/status loaded_models[0]
+# v9.1: after restart, poll /api/status up to 30s for the model to appear in
+#   loaded_models before sending warm-up. Fixes: restart recovers with model=none
+#   (lazy load), warm-up skipped, agents hit cold 25s TTFT.
+# v9: multi-agent restart-loop protection:
+#   - RESTART_COOLDOWN_SECONDS=300 — after any restart, no further restart for 5 min
+#   - warm-up request after recovery — cuts TTFT from ~25s to <3s for subsequent agents
+#   - Check D (token stall) is the only check that fires during active multi-agent work;
+#     cooldown prevents it from re-firing every 60s tick while agents are queued.
+# v8: merged docker-watchdog into this script; launchd self-heal — if the agent
+#   is not registered in the GUI domain, re-bootstrap itself (fixes LaunchAgents
+#   silently dropping after Docker Desktop upgrade or macOS reboot).
+# v6: model follows omlx dynamically via /api/status loaded_models[0]
 #   (multi-model switching safe; nothing loaded -> model checks skipped, never force-loads).
 # v5: default_model tracking. Fixes restart-loop incident where the watchdog kept
 #   checking a stale model name after the user switched defaults.
@@ -15,18 +26,23 @@
 set -u
 
 OMLX_BIN="${OMLX_WATCHDOG_OMLX_BIN:-/opt/homebrew/bin/omlx}"
+DOCKER_CLI="${OMLX_WATCHDOG_DOCKER:-/usr/local/bin/docker}"   # Docker Desktop CLI symlink (launchd has minimal PATH)
 OMLX_HOME="${OMLX_WATCHDOG_OMLX_HOME:-$HOME/.omlx}"
 LOG_DIR="$OMLX_HOME/logs"
 LOG_FILE="$LOG_DIR/watchdog.log"
 STATS_STATE="/tmp/omlx-watchdog-state-v3"   # "LAST_TOK FROZEN_SINCE"(0=none)
 FAIL_STATE="/tmp/omlx-watchdog-fails"       # compat (reset after restart)
+COOLDOWN_STATE="/tmp/omlx-watchdog-cooldown"  # v9: epoch timestamp of last restart
 API_BASE="${OMLX_WATCHDOG_API:-http://127.0.0.1:8000}"
 STALL_SECONDS="${OMLX_WATCHDOG_STALL:-900}"
+RESTART_COOLDOWN_SECONDS="${OMLX_WATCHDOG_RESTART_COOLDOWN:-300}"   # v9: no restart within 5 min of previous one
 
 mkdir -p "$LOG_DIR"
 if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE")" -gt 10485760 ]; then
   mv "$LOG_FILE" "$LOG_FILE.1"
 fi
+
+log() { echo "[$(date '+%F %T')] $*" >> "$LOG_FILE"; }
 
 # re-entrancy guard (Check C probe up to 90s, may span ticks)
 LOCK="/tmp/omlx-watchdog.lock"
@@ -36,8 +52,28 @@ if [ -f "$LOCK" ]; then
 fi
 echo $$ > "$LOCK"
 
-log() { echo "[$(date '+%F %T')] $*" >> "$LOG_FILE"; }
+# ---------- launchd self-heal (v8) -------------------------------------------
+# If this agent is not registered in the GUI domain, re-bootstrap it. Fixes the
+# case where LaunchAgents silently drop after Docker Desktop upgrade / reboot:
+# the next tick re-registers itself, so the system self-heals without manual work.
+ME_LABEL="${OMLX_WATCHDOG_LAUNCHD_LABEL:-com.ricky.omlx-watchdog}"
+if ! launchctl print "gui/$(id -u)/$ME_LABEL" >/dev/null 2>&1; then
+  log "SELF-HEAL: $ME_LABEL not registered in GUI domain -> bootstrapping"
+  launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$ME_LABEL.plist" 2>/dev/null \
+    || log "SELF-HEAL: bootstrap FAILED (will retry next tick)"
+fi
 
+# ---------- Docker Desktop check (v8, merged from docker-watchdog v3) --------
+# Guard 1: GUI process already running -> nothing to do.
+if pgrep -f "Docker Desktop" >/dev/null 2>&1; then :; else
+  # Guard 2: daemon reachable via absolute path -> nothing to do.
+  if "$DOCKER_CLI" info >/dev/null 2>&1; then :; else
+    log "DOCK: daemon unreachable AND Docker Desktop not running -> launching"
+    open -a Docker 2>/dev/null || log "DOCK: open -a Docker failed"
+  fi
+fi
+
+# ---------- oMLX health checks -------------------------------------------------
 KEY=$(python3 -c "import json;print(json.load(open('$OMLX_HOME/settings.json'))['auth']['api_key'])" 2>/dev/null)
 
 status_json() {
@@ -58,7 +94,7 @@ check_models() {   # $1 = model name; unknown/empty -> skip check (return 0)
   curl -sf --max-time 15 "$API_BASE/v1/models" -H "Authorization: Bearer $KEY" | grep -q "\"$1\""
 }
 
-# v5: kill LISTENER on port 8000 only (never client connections - v4 bug).
+# v5: kill LISTENER on the configured port only (never client connections - v4 bug).
 kill_port_holders() {
   local lp port
   port=$(echo "$API_BASE" | grep -oE '[0-9]+$')
@@ -80,6 +116,24 @@ kill_port_holders() {
 }
 
 do_restart() {
+  # v9: cooldown guard — skip restart if we just restarted within the window.
+  # This is the critical fix for multi-agent loops: when Check D fires at
+  # active+waiting=7, the restart drops all in-flight agent requests. Without a
+  # cooldown, each subsequent tick sees active+waiting>0 with stalled tokens and
+  # fires another restart immediately, creating an infinite loop.
+  local last_restart now_ts in_cooldown
+  if [ -f "$COOLDOWN_STATE" ]; then
+    last_restart=$(cat "$COOLDOWN_STATE" 2>/dev/null)
+    now_ts=$(date +%s)
+    if [ -n "$last_restart" ] && [ $((now_ts - last_restart)) -lt $RESTART_COOLDOWN_SECONDS ]; then
+      in_cooldown=$(( RESTART_COOLDOWN_SECONDS - (now_ts - last_restart) ))
+      log "COOLDOWN: restart skipped (${in_cooldown}s remaining, active agents will recover on their own)"
+      echo 0 > "$FAIL_STATE"
+      : > "$STATS_STATE"   # reset stall state so we don't re-trigger immediately after cooldown
+      return 0
+    fi
+  fi
+
   log "ACTION: $OMLX_BIN restart --timeout 240"
   if ! "$OMLX_BIN" restart --timeout 240 >> "$LOG_FILE" 2>&1; then
     log "FALLBACK: omlx restart rc!=0, clean port listener and retry"
@@ -89,6 +143,10 @@ do_restart() {
       open -a oMLX >> "$LOG_FILE" 2>&1 || log "FALLBACK FAILED: open -a oMLX also failed"
     fi
   fi
+
+  # v9: record restart timestamp for cooldown tracking (even if recovery fails)
+  date +%s > "$COOLDOWN_STATE"
+
   ok="no"; m=""
   for _ in $(seq 1 24); do   # up to 24 x 10s = 4 min for /api/status
     sleep 10
@@ -96,8 +154,36 @@ do_restart() {
     m=$(python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('loaded_models') or [None])[0] or '')" <<<"$s" 2>/dev/null)
     ok="yes"; break
   done
+
   if [ "$ok" = "yes" ]; then
     log "RECOVERED: oMLX up (loaded=${m:-none})"
+
+    # v9.1: after a restart, the model may not be loaded yet (lazy-load on first
+    # real request). Poll /api/status until a model appears in loaded_models, up
+    # to 30s. Without this, the warm-up below is skipped and agents hit a cold
+    # 25s TTFT. If no model loads (nothing was loaded before the restart), skip
+    # warm-up gracefully — matches v6 "empty = cannot verify" semantics.
+    if [ -z "$m" ]; then
+      for _ in $(seq 1 6); do   # up to 6 x 5s = 30s for model lazy-load
+        sleep 5
+        s=$(status_json) || continue
+        m=$(python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('loaded_models') or [None])[0] or '')" <<<"$s" 2>/dev/null)
+        [ -n "$m" ] && break
+      done
+    fi
+
+    # v9: warm-up request — cuts TTFT from ~25s (model load) to <3s for the next
+    # real agent request. The model is loaded into VRAM but not yet "hot"; this
+    # first inference primes the KV cache and CUDA/Metal kernels.
+    if [ -n "$m" ]; then
+      log "WARMUP: sending warm-up request (model=$m) to prime model in VRAM"
+      curl -sf --max-time 120 "$API_BASE/v1/chat/completions" \
+        -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+        -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"warmup\"}],\"max_tokens\":1}" > /dev/null 2>&1 \
+        && log "WARMUP: done (subsequent requests will be fast)" \
+        || log "WARMUP: failed (non-critical, model will load on first real request)"
+    fi
+
     echo 0 > "$FAIL_STATE"
     : > "$STATS_STATE"   # counters reset after restart, clear stall state
   else

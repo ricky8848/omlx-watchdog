@@ -16,6 +16,8 @@
 | 4 | 切换模型后无限重启循环 —— 看门狗一直拿旧模型名探测，"恢复"到同样坏的状态 | 模型检查硬编码/跟随 `default_model`，而 oMLX 实际加载的是另一个 | **v6：模型 = `/api/status` → `loaded_models[0]`** —— 跟随 oMLX *实际加载*的模型；无模型 → 跳过检查，绝不强制加载 |
 | 5 | 看门狗自己触发它要监控的故障（probe 撞在途请求；两个 tick 重叠） | probe 未看队列状态就发；慢 Check C 跨入下一个 60s tick | probe **仅在 `active+waiting == 0`**（队列可证为空）时执行；PID lockfile 防重入 |
 | 6 | Agent harness（DSH）重试死循环或过早放弃 | 重试窗口与恢复时间不匹配（太激进=死亡循环；太短=restart 中途任务死） | 配套 harness 配置：有界重试（如 DSH `maxRetries=40`，最坏 ~35min）覆盖 2–4 min restart + 模型自动加载；永久故障显式失败 |
+| 7 | **多 Agent 并发时无限重启循环**：Check D 触发 restart → 所有 in-flight agent 断开 → token counter 停滞 → Check D 再次触发 | restart 后模型未加载（lazy load），agent 排队等 token，watchdog 每 60s tick 都看到 stall → **无限循环** | **v9：300s 冷却期 + warm-up 请求**。restart 后 5min 内不再触发第二次 restart；agent 通过 DSH retry 自行恢复。warm-up（`max_tokens=1`）将 TTFT 从 ~25s 降至 <3s |
+| 8 | Docker Desktop 升级/macOS 重启后 LaunchAgent 静默丢失，watchdog 停止运行 | `~/Library/LaunchAgents/` plist 被系统移除或不被加载 | **v8：launchd self-heal** —— 每次 tick 检查自身注册状态（`launchctl print gui/uid/label`），未注册则从磁盘 plist 重新 bootstrap |
 
 ### 设计第一性原理
 
@@ -35,7 +37,10 @@ curl -fsSL https://raw.githubusercontent.com/ricky8848/omlx-watchdog/main/script
 |---:|---:|---|
 | `OMLX_WATCHDOG_API` | `http://127.0.0.1:8000` | oMLX API 地址（端口从这里解析，用于 PORT-CLEAN） |
 | `OMLX_WATCHDOG_STALL` | `900` | 有在途请求时，token 计数器停滞多少秒判定 wedged |
+| `OMLX_WATCHDOG_RESTART_COOLDOWN` | `300` | 任何 restart 后多少秒内不再触发第二次（v9） |
+| `OMLX_WATCHDOG_DOCKER` | `/usr/local/bin/docker` | Docker CLI 绝对路径（launchd PATH 最小；v8） |
 | `OMLX_WATCHDOG_OMLX_HOME` | `$HOME/.omlx` | oMLX 家目录（必须含 `settings.json`） |
+| `OMLX_WATCHDOG_LAUNCHD_LABEL` | `com.ricky8848.omlx-watchdog` | launchd agent label（self-heal 用；v8） |
 
 安装器会：
 1. 预检 macOS + oMLX（`~/.omlx/settings.json`），定位 `omlx` CLI。
@@ -60,6 +65,25 @@ rm -f ~/Library/LaunchAgents/com.ricky8848.omlx-watchdog.plist ~/.omlx/watchdog.
 | **D** 停滞检测器 | `total_prompt_tokens + total_completion_tokens` vs 上 tick | 有在途请求 **且** 计数器冻结 ≥ `STALL_SECONDS`（默认 900s） | 仅在有工作在途时计时；计数器重置（外部 restart）重新装填定时器而非误报 |
 
 **恢复阶梯**（任一 check 失败）：`omlx restart --timeout 240` → **PORT-CLEAN**（只杀 listener，30s 宽限，`kill -9`）+ retry → 最后 `open -a oMLX`。然后轮询 `/api/status` 最多 4min；记录 `RECOVERED: oMLX up (loaded=<model>)` 并重置停滞状态。
+
+### v9：多 Agent 重启循环防护（2026-09-11）
+
+多个 agent 共享一个 oMLX 实例时，restart 会断开所有 in-flight 请求。没有保护机制的话，Check D 每 60s tick 重复触发 → **无限重启循环**。
+
+| 特性 | 机制 |
+|---:|---|
+| **重启冷却期**（300s） | `do_restart()` 入口检查 `/tmp/omlx-watchdog-cooldown`（上次 restart 的 epoch）。冷却期内所有 check 跳过重启——agent 通过 DSH retry 自行恢复。冷却期结束后 stall state 清零，900s 计时器从零重新积累 |
+| **模型加载轮询**（v9.1，30s） | restart 恢复后，omlx v0.6.x lazy-load：模型在第一个真实请求时才加载。watchdog 轮询 `loaded_models` 最多 30s，确保 warm-up 在模型实际加载后才执行 |
+| **Warm-up 请求**（`max_tokens=1`） | 模型出现在 `loaded_models` 后，发一个推理请求预热 VRAM + Metal kernel。后续 agent 请求 TTFT <3s（vs 16.6GB 模型冷加载 ~25s） |
+
+**实测：** 3 agent 并发 SSE + `omlx restart` → 2 agent 被中断（预期，rc=18），系统 ~22s 恢复，**冷却期内零第二次重启**。8/8 检查通过。
+
+### v9：Docker Desktop + launchd self-heal（合并自 docker-watchdog）
+
+| 特性 | 机制 |
+|---:|---|
+| **Docker Desktop guard** | 每次 tick：`pgrep -f "Docker Desktop"` → daemon check（绝对路径 CLI）。仅当进程和 daemon 都不存在时才 `open -a Docker` |
+| **launchd self-heal** | `launchctl print gui/$(id -u)/<label>` —— agent 未注册（Docker Desktop 升级 / macOS 重启静默移除 LaunchAgents）时从磁盘 plist 重新 bootstrap |
 
 ### 一周生产实测结果
 

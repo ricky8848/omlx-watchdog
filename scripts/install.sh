@@ -10,11 +10,15 @@ REPO_URL="https://raw.githubusercontent.com/ricky8848/omlx-watchdog/main"
 OMLX_HOME="${OMLX_WATCHDOG_OMLX_HOME:-$HOME/.omlx}"
 API_BASE="${OMLX_WATCHDOG_API:-http://127.0.0.1:8000}"
 STALL_SECONDS="${OMLX_WATCHDOG_STALL:-900}"
+RESTART_COOLDOWN="${OMLX_WATCHDOG_RESTART_COOLDOWN:-300}"
+DOCKER_CLI="${OMLX_WATCHDOG_DOCKER:-/usr/local/bin/docker}"
 
-echo "==> omlx-watchdog installer"
+echo "==> omlx-watchdog installer (v9.1)"
 echo "    OMLX_HOME:  $OMLX_HOME"
 echo "    API_BASE:   $API_BASE"
 echo "    STALL_SECONDS: $STALL_SECONDS"
+echo "    RESTART_COOLDOWN: ${RESTART_COOLDOWN}s (v9)"
+echo "    DOCKER_CLI: $DOCKER_CLI"
 
 # ---- preflight checks -------------------------------------------------
 if [ "$(uname -s)" != "Darwin" ]; then
@@ -43,6 +47,21 @@ fi
 if ! curl -sf --max-time 3 "$API_BASE/api/status" >/dev/null 2>&1; then
   echo "WARN: $API_BASE/api/status not reachable right now (no API key sent)."
   echo "      This is normal if oMLX is not running yet; the watchdog will start it."
+fi
+
+# v8: check Docker Desktop (warn only — merged into watchdog)
+if ! pgrep -f "Docker Desktop" >/dev/null 2>&1 && ! "$DOCKER_CLI" info >/dev/null 2>&1; then
+  echo "WARN: Docker Desktop not running and daemon unreachable."
+  echo "      The watchdog will launch it automatically on the next tick if needed."
+fi
+
+# v9: check for existing cooldown state (info only)
+if [ -f "/tmp/omlx-watchdog-cooldown" ]; then
+  _last_restart=$(cat /tmp/omlx-watchdog-cooldown 2>/dev/null)
+  _now=$(date +%s)
+  if [ -n "$_last_restart" ] && [ $((_now - _last_restart)) -lt 300 ]; then
+    echo "INFO: recent restart detected ($((_now - _last_restart))s ago) — cooldown active for $((300 - (_now - _last_restart)))s"
+  fi
 fi
 
 # ---- install files -----------------------------------------------------
@@ -82,6 +101,8 @@ cat > "$PLIST_SRC" <<EOF
   <dict>
     <key>OMLX_WATCHDOG_API</key><string>$API_BASE</string>
     <key>OMLX_WATCHDOG_STALL</key><string>$STALL_SECONDS</string>
+    <key>OMLX_WATCHDOG_RESTART_COOLDOWN</key><string>$RESTART_COOLDOWN</string>
+    <key>OMLX_WATCHDOG_DOCKER</key><string>$DOCKER_CLI</string>
   </dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>

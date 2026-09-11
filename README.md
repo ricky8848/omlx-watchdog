@@ -65,7 +65,10 @@ OMLX_WATCHDOG_API=http://127.0.0.1:8000 OMLX_WATCHDOG_STALL=900 \
 |---:|---:|---|
 | `OMLX_WATCHDOG_API` | `http://127.0.0.1:8000` | oMLX API base URL (port parsed from here for port-cleanup) |
 | `OMLX_WATCHDOG_STALL` | `900` | Seconds of token-counter stall (with work in flight) before declaring wedged |
+| `OMLX_WATCHDOG_RESTART_COOLDOWN` | `300` | Seconds after any restart during which no further restart is triggered (v9) |
+| `OMLX_WATCHDOG_DOCKER` | `/usr/local/bin/docker` | Absolute path to Docker CLI (launchd has minimal PATH; v8) |
 | `OMLX_WATCHDOG_OMLX_HOME` | `$HOME/.omlx` | oMLX home (must contain `settings.json`) |
+| `OMLX_WATCHDOG_LAUNCHD_LABEL` | `com.ricky8848.omlx-watchdog` | launchd agent label for self-heal (v8) |
 
 The installer:
 1. Verifies macOS + oMLX presence (`~/.omlx/settings.json`), locates the `omlx` CLI (Homebrew or PATH).
@@ -90,6 +93,25 @@ rm -f ~/Library/LaunchAgents/com.ricky8848.omlx-watchdog.plist ~/.omlx/watchdog.
 | **D** stall detector | `total_prompt_tokens + total_completion_tokens` vs last tick | work in flight **and** counter frozen ≥ `STALL_SECONDS` (default 900 s) | only arms while work is in flight; counter reset (external restart) re-arms the timer instead of false-firing |
 
 **Recovery ladder** (any check fails): `omlx restart --timeout 240` → **PORT-CLEAN** (listener-only kill, 30 s grace, `kill -9`) + retry → last resort `open -a oMLX`. Then poll `/api/status` for up to 4 min; log `RECOVERED: oMLX up (loaded=<model>)` and reset stall state.
+
+### v9: Multi-agent restart-loop protection (2026-09-11)
+
+When multiple agents share one oMLX instance, a restart drops all in-flight requests. Without protection, Check D re-fires every 60 s tick while agents are queued → **infinite restart loop**.
+
+| Feature | How it works |
+|---:|---|
+| **Restart cooldown** (300 s) | `do_restart()` checks `/tmp/omlx-watchdog-cooldown` (epoch of last restart). Within the window, all checks skip restarting — agents recover on their own via DSH retry. Cooldown ends → stall state cleared, 900 s timer re-arms from zero |
+| **Model-load poll** (v9.1, 30 s) | After restart recovery, omlx v0.6.x lazy-loads the model on first real request. The watchdog polls `loaded_models` for up to 30 s before warm-up, so the agent's first post-restart request hits a hot model |
+| **Warm-up request** (`max_tokens=1`) | After the model appears in `loaded_models`, one inference primes VRAM + Metal kernels. Subsequent agent requests: TTFT < 3 s (vs ~25 s cold load for a 16.6 GB model) |
+
+**Tested:** 3 concurrent SSE agents + `omlx restart` → 2 interrupted (expected, rc=18), system recovered in ~22 s, **zero second restart** during cooldown. 8/8 checks pass.
+
+### v9: Docker Desktop + launchd self-heal (merged from docker-watchdog)
+
+| Feature | How it works |
+|---:|---|
+| **Docker Desktop guard** | Every tick: `pgrep -f "Docker Desktop"` → daemon check via absolute-path CLI. Only launches Docker if *both* process and daemon are absent |
+| **launchd self-heal** | `launchctl print gui/$(id -u)/<label>` — if the agent is not registered (Docker Desktop upgrade / macOS reboot silently drops LaunchAgents), re-bootstrap from the plist on disk |
 
 ### Result after a week of production use
 
@@ -166,6 +188,9 @@ Issue templates ([`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE)): structured
 | 3/4 | 2026-09-07 | Checks A–D introduced; PORT-CLEAN added (v4) — killed *all* port-8000 holders incl. clients → could kill a freshly started server |
 | 5 | 2026-09-08 | PORT-CLEAN restricted to **LISTENER only** (`lsof -sTCP:LISTEN`); model follows `default_model`; fixes the stale-model restart loop |
 | 6 | 2026-09-08 | Model = `/api/status` **`loaded_models[0]`** (multi-model switching safe; nothing loaded → checks skipped, never force-loads); env-overridable paths/port/stall threshold |
+| 8 | 2026-09-11 | **Merged docker-watchdog** into single script; launchd self-heal (`launchctl print gui/uid/label` → re-bootstrap if dropped); Docker Desktop guard |
+| **9** | **2026-09-11** | **Multi-agent restart-loop protection**: 300 s cooldown after any restart; warm-up request (`max_tokens=1`) cuts TTFT from ~25 s to <3 s |
+| **9.1** | **2026-09-11** | **Model-load poll after restart** (30 s) — ensures warm-up fires only when the model is actually loaded; fixes v9 edge case where `model=none` (lazy load) caused warm-up to be skipped |
 
 ## Works with
 
