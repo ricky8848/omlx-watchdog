@@ -1,0 +1,164 @@
+name: Publish
+
+# ──────────────────────────────────────────────────────────────
+# One-click publish workflow: push a tag → release + discussion.
+#
+#   1. Push v9.2.0 tag          → creates/updates GitHub Release
+#                                  with bilingual notes (from RELEASE_NOTES.md)
+#   2. Push v9.2.0-discussion    → posts to jundot/omlx Discussions
+#                                  (Show and tell) — for cross-repo sharing
+#   3. workflow_dispatch         → manual trigger from GitHub UI
+#                                  (dropdown: repo, tag) for re-publishing
+#
+# Required secrets (repo Settings → Secrets and variables → Actions):
+#   GITHUB_TOKEN  — auto-provided by GitHub (permissions below)
+#   DISCUSSIONS_REPO_OWNER  — e.g. "jundot"
+#   DISCUSSIONS_REPO_NAME   — e.g. "omlx"
+#   DISCUSSIONS_CATEGORY    — category name, e.g. "Show and tell"
+# ──────────────────────────────────────────────────────────────
+
+on:
+  push:
+    tags:
+      - 'v*'           # v9.2.0 → release only
+      - '*-discussion' # v9.2.0-discussion → discussion post
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v9.2.0)"
+        required: true
+      post_discussion:
+        description: "Also post to jundot/omlx Discussions"
+        type: choice
+        options: ["no", "yes"]
+        default: "no"
+
+permissions:
+  contents: write       # create/update release, upload assets
+  discussions: write    # post to jundot/omlx
+
+env:
+  REPO_OWNER: ricky8848
+  REPO_NAME: omlx-watchdog
+
+jobs:
+  # ════════════════════════════════════════════════════════════
+  # Release: push v9.2.0 → GitHub Release with notes + assets
+  # ════════════════════════════════════════════════════════════
+  release:
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+       && !endsWith(github.ref_name, '-discussion')) ||
+      (github.event_name == 'workflow_dispatch' && !endsWith(github.inputs.tag, '-discussion'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Read notes from RELEASE_NOTES.md if it exists, otherwise use tag name
+          NOTES=""
+          if [[ -f RELEASE_NOTES.md ]]; then
+            NOTES=$(cat RELEASE_NOTES.md)
+          else
+            NOTES="Release ${TAG_NAME}"
+          fi
+
+          # Create release (or update if exists)
+          gh release view "$TAG_NAME" --repo ricky8848/omlx-watchdog 2>/dev/null \
+            && gh release edit "$TAG_NAME" --repo ricky8848/omlx-watchdog \
+                 --title "v${TAG_NAME#v}" --notes "$NOTES" \
+            || gh release create "$TAG_NAME" --repo ricky8848/omlx-watchdog \
+                 --title "v${TAG_NAME#v}" --notes "$NOTES"
+
+          echo "::notice::Release $TAG_NAME published."
+
+      - name: Upload paper PDFs as assets
+        if: hashFiles('docs/paper/*.pdf') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          for pdf in docs/paper/*.pdf; do
+            echo "Uploading $pdf …"
+            gh release upload "$TAG_NAME" "$pdf" --repo ricky8848/omlx-watchdog \
+              --clobber
+          done
+
+  # ════════════════════════════════════════════════════════════
+  # Discussion: push v9.2.0-discussion → jundot/omlx Discussions
+  # ════════════════════════════════════════════════════════════
+  discussion:
+    if: |
+      (github.event_name == 'push' && endsWith(github.ref_name, '-discussion')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.post_discussion == 'yes')
+    needs: release   # wait for release to exist first (links in body)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post to jundot/omlx Discussions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.ref_name | replace('-discussion', '')) }}
+          DISC_OWNER: ${{ vars.DISCUSSIONS_REPO_OWNER || 'jundot' }}
+          DISC_NAME:  ${{ vars.DISCUSSIONS_REPO_NAME || 'omlx' }}
+          DISC_CAT:   ${{ vars.DISCUSSIONS_CATEGORY || 'Show and tell' }}
+        run: |
+          set -euo pipefail
+
+          # Build discussion body from README highlights + release link
+          TITLE="omlx-watchdog ${TAG_NAME} — Self-healing health monitor"
+
+          BODY=$(cat <<'BODYEOF'
+          ## omlx-watchdog — Self-healing health monitor
+
+          **Repo:** [ricky8848/omlx-watchdog](https://github.com/ricky8848/omlx-watchdog)
+
+          A launchd-based watchdog (186-line bash script) that keeps a local oMLX
+          inference server alive on Apple Silicon — zero false-positive restarts,
+          full self-healing in ≤4 min.
+
+          ### Install
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/ricky8848/omlx-watchdog/main/scripts/install.sh | bash
+          ```
+
+          ### Companion repo
+          [ricky8848/mac-m5-128g-omlx-settings](https://github.com/ricky8848/mac-m5-128g-omlx-settings) —
+          M5 Max 128GB config (oQ4e + MTP).
+
+          ### Technical report
+          - **DOI:** [10.5281/zenodo.22675074](https://doi.org/10.5281/zenodo.22675074)
+          - **English:** [PDF](https://github.com/ricky8848/omlx-watchdog/releases/download/__TAG__/paper-technical-report-en.pdf)
+          - **中文:** [PDF](https://github.com/ricky8848/omlx-watchdog/releases/download/__TAG__/paper-technical-report-zh-CN.pdf)
+
+          ---
+          *Independent community tool, MIT licensed. No affiliation with oMLX or its maintainers.*
+          BODYEOF
+          )
+          # Inject actual tag into PDF links
+          BODY="${BODY//__TAG__/${TAG_NAME}}"
+
+          # Create discussion via GraphQL (REST doesn't support discussions)
+          gh api graphql \
+            -f query='mutation($repositoryId: ID!, $categoryId: String!, $title: String!, $body: String!) {
+              createDiscussion(input: {repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body}) {
+                discussion { url number }
+              }
+            }' \
+            -f repositoryId=$(gh api repos/${DISC_OWNER}/${DISC_NAME} --jq .node_id) \
+            -F categoryId=string="$DISC_CAT" \
+            -F title=string="$TITLE" \
+            -F body=@<(echo "$BODY") 2>&1 || true
+
+          # Fallback: if createDiscussion fails (no permission), print URL for manual posting
+          echo "::warning::If the discussion was not created automatically, post manually at:"
+          echo "https://github.com/${DISC_OWNER}/${DISC_NAME}/discussions/new"
+          echo "Title: $TITLE"
