@@ -106,7 +106,7 @@ jobs:
       - name: Post to jundot/omlx Discussions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.ref_name | replace('-discussion', '')) }}
+          TAG_NAME: ${{ (github.event_name == 'workflow_dispatch' && inputs.tag) || github.ref_name }}
           DISC_OWNER: ${{ vars.DISCUSSIONS_REPO_OWNER || 'jundot' }}
           DISC_NAME:  ${{ vars.DISCUSSIONS_REPO_NAME || 'omlx' }}
           DISC_CAT:   ${{ vars.DISCUSSIONS_CATEGORY || 'Show and tell' }}
